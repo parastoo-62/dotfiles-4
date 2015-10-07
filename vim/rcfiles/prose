@@ -20,8 +20,35 @@ if exists("+spelllang")
 endif
 set spellfile=~/.vim/spell/en.utf-8.add
 
-nnoremap <LEADER>more i<!--more--><ESC>
-nnoremap <leader>gf gqip
+function! s:MoreThanOneTmuxPane()
+  return system("tmux list-panes | wc -l | awk '{print $1}'") != "1"
+endfunction
+
+function! s:TmuxPaneIsZoomed()
+  call system("tmux list-panes -F '#F' | grep -q Z")
+  return !v:shell_error
+endfunction
+
+function! s:Focus()
+  Goyo
+  call system("tmux set -g status off")
+  call system('osascript -e "tell application \"iTerm\" to set the transparency of the current session of the current terminal to 0"')
+  if s:MoreThanOneTmuxPane() && !s:TmuxPaneIsZoomed()
+    call system("tmux resize-pane -Z")
+  endif
+  wincmd =
+endfunction
+command! Focus call <sid>Focus()
+
+function! s:Unfocus()
+  Goyo!
+  call system("tmux set -g status on")
+  call system('osascript -e "tell application \"iTerm\" to set the transparency of the current session of the current terminal to 0.17"')
+  if s:TmuxPaneIsZoomed()
+    call system("tmux resize-pane -Z")
+  endif
+endfunction
+command! Unfocus call <sid>Unfocus()
 
 function! WrapCurrentWord(format)
   normal! gv
@@ -38,10 +65,12 @@ vnoremap <C-b> :call WrapCurrentWord("bold")<cr>
 vnoremap <C-i> :call WrapCurrentWord("italic")<cr>
 
 function! MarkdownMode()
-  " setlocal spell        " Enable spell checking
+  setlocal spell        " Enable spell checking
   setlocal nowrap       " Let long lines scroll off
   setlocal linebreak    " Use word boundaries to break lines
   setlocal textwidth=78
+  setlocal isk-=.       " sh.vim syntax file seems to be setting this...
+  nnoremap <leader>bl :BoldListItems<cr>
   nnoremap <buffer> <leader>ns ]s
   " nnoremap <buffer> <leader>sp ea<C-x><C-s>
   nnoremap <buffer> <leader>sf mm[s1z=`m
@@ -50,6 +79,12 @@ function! MarkdownMode()
   nnoremap <buffer> <leader>md :call OpenCurrentFileInMarked()<cr>
   nnoremap <buffer> <leader>bld mm"bciw**b**<esc>`m2l
   nnoremap <buffer> <leader>em mm"bciw*b*<esc>`m2l
+  nnoremap <buffer> <cr> :MarkdownAwareGX<cr>
+  nnoremap <buffer> <leader>dp :call system("open -a Deckset <C-r>%")<cr>
+  command! BlockQuotify execute "normal! {jvip\<C-v>I> \<ESC>gqip"
+  nnoremap <buffer> <leader>gq :BlockQuotify<cr>
+  vmap <leader>gq :g/\(^$\n\)\@<=.*/BlockQuotify<cr>
+
   " Heading / underline funcitons
   nnoremap <buffer> <leader>u1 mmyypVr=`m<cr><esc>
   nnoremap <buffer> <leader>u2 mmyypVr-`m<cr><esc>
@@ -59,6 +94,17 @@ function! MarkdownMode()
   nnoremap <buffer> <leader>fw mm1z=`m
   nnoremap <buffer> <leader>df :call system('open dict://'. expand('<cword>'))<cr>
 endfunction
+
+function! s:BoldListItems()
+  let saved_cursor = getpos(".")
+  normal! vip
+  :'<,'>substitute/\v^(\s*)- (.{-}) -/\1- **\2** -/g
+  " let previous_blank_line = search('^$', 'bn')
+  " let target_line = previous_blank_line + a:position - 1
+  " execute "move " . target_line
+  call setpos('.', saved_cursor)
+endfunction
+command! BoldListItems call <sid>BoldListItems()
 
 function! s:JumpToNextLink(direction)
   let link_pattern = '\v\[\S.{-}\n?.{-}\]\[\]'
@@ -78,11 +124,13 @@ function! s:ShiftCursorColumn(columns)
   call cursor(position)
 endfunction
 
-function! OpenCurrentFileInMarked()
-    let current_file = expand('%')
-    let open_cmd = join(["open -a Marked", current_file])
-    call system(open_cmd)
+function! OpenCurrentFileInMarked() abort
+  write
+  let current_file = expand('%')
+  let open_cmd = join(["open -a Marked", current_file])
+  call system(open_cmd)
 endfunction
+command! OpenCurrentFileInMarked call OpenCurrentFileInMarked()
 
 function! MoveEm(position)
   let saved_cursor = getpos(".")
@@ -129,6 +177,7 @@ endfunction
 command! FixLastSpellingError call <sid>FixLastSpellingError()
 nnoremap <Plug>FixLastSpellingError :FixLastSpellingError<cr>
 map <leader>sp <Plug>FixLastSpellingError
+imap <C-y> <C-o>:w<cr><C-o><leader>sp
 " nnoremap <leader>SP uea<C-x><C-s>
 
 " vim:ft=vim
